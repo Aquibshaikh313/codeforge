@@ -2,7 +2,22 @@ const express = require('express');
 const app = express();
 const port = 5000;
 
-app.use(express.json()); // 
+app.use(express.json()); 
+
+app.use((req,res,next) => {
+
+  const token = req.headers.authorization;
+  
+
+  if(!token) {
+    return res.status(401).json({
+      message : "Authorization token required"
+    });
+  }
+
+  next();
+  
+})
 
 const problems = [
   {
@@ -42,11 +57,22 @@ app.get('/api/problems/:id', (req,res) => {
 
 // POST METHOD
 app.post('/api/problems',(req,res) =>{
+
+  const title = req.body.title;
+
+  if(!title){
+    return res.status(400).json({
+      message: "Title is required"
+    });
+  }
   
+  //calculate a safe unique new id using math.max
+  const newId = problems.length > 0 ? Math.max(...problems.map(problem => problem.id)) + 1 : 1;
+
   //creating a new problem 
   const newProblem = {
-    id: problems.length + 1, // i.e 4,5,6
-    title: req.body.title // title snd by user
+    id: newId, // i.e 4,5,6
+    title: title // title snd by user
   }
   problems.push(newProblem);
   
@@ -58,30 +84,40 @@ app.get('/search', (req,res) => {
   const requestQuery = req.query.q;
 
   // If the user didn't provide a parameter, return an error
-  if (!requestQuery) {
-    return res.status(400).json({ message: "Please provide a search parameter (?param=...)" });
+  if (!requesQuery) {
+    return res.status(400).json({ message: "Please provide a search parameter (?q=...)" });
   }
 
-  const problem = problems.find(p => {
+  //cleaning up the extra spaces and forcing it to lowercase
+  const cleanQuery = requestQuery.trim().toLowerCase()
 
-    //converting to string since query is in string
-    const matchesId = p.id.toString() === requestQuery;
+  // step 1 : looking for exact match 
+  const exactMatch = problems.find(p => {
+    const matchesId = p.id.toString() === cleanQuery;
+    const matchesExactTitle = p.title.toLowerCase() === cleanQuery;
     
-   // ignoring the uppercase here
+    return matchesId || matchesExactTitle
+  })
+  // if the exact match found
+  if(exactMatch){
+    return res.status(200).json([exactMatch])
+  }
+  
+  // step 2: partial match : // This looks for titles that "contain" the search string (e.g., "Two" matches "Two Sum")
+  
+  const partialMatches = problems.filter(p => {
+    
+    return p.title.toLowerCase().includes(cleanQuery);
 
-    const matchesTitle = p.title.toLowerCase() === requestQuery.toLowerCase();
-   
-    // if any one matches
-    return matchesId || matchesTitle;
   })
  
-  // if not found then error
-  if(!problem){
+  // if both step fails return 404
+  if(partialMatches.length === 0){
     return res.status(404).json({message:"Problem not found"})
   }
   
   // this will return the actual matching pb
-  res.status(200).json(problem);
+  res.status(200).json(partialMatches);
 })
 
 //PUT METHOD
