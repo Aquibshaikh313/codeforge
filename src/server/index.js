@@ -1,179 +1,197 @@
-const express = require('express');
+//required for creating http server and routes
+const express = require("express");
+
+//dotenv basically loads env into process.env so our password = "secret password"
+require("dotenv").config();
+
+//imports function responsible for mongodb connection
+const connectDB = require("./config/db");
+
+//this imports mongoose model i.e responsible to communicate with mongodb
+const Problem = require("./models/Problem");
+
 const app = express();
 const port = 5000;
 
-app.use(express.json()); 
+//runs db connection function
+connectDB();
 
-app.use((req,res,next) => {
+//imp basically json middleware parsing so routes can access it thru req.body
+app.use(express.json());
 
+//this is authetication middleware, runs before routes
+app.use((req, res, next) => {
   const token = req.headers.authorization;
-  
 
-  if(!token) {
+  if (!token) {
     return res.status(401).json({
-      message : "Authorization token required"
+      message: "Authorization token required",
     });
   }
 
   next();
-  
-})
-
-const problems = [
-  {
-    "id": 1,
-    "title": "Two Sum"
-  },
-  {
-    "id": 2,
-    "title": "Reverse Linked List"
-  },
-  {
-    "id": 3,
-    "title": "Valid Parentheses"
-  }
-]
+});
 
 //Get method
 // Define a route for the root URL
-app.get('/api/problems', (req, res) => {
-  // res.send("Server is working fine"),
-  res.status(200).json(problems)
- 
+app.get("/api/problems", async (req, res) => {
+  try {
+    const allProblems = await Problem.find({});
+    // res.send("Server is working fine"),
+    res.status(200).json(allProblems);
+  } catch (error) {
+    res
+      .status(500)
+      .json({
+        message: "Server error fetching problems",
+        error: error.message,
+      });
+  }
 });
 
 // triggering particular id based pbs
-app.get('/api/problems/:id', (req,res) => {
-  const problemId = parseInt(req.params.id);
-  const problem = problems.find(p => p.id === problemId);
-  
-  if(!problem){
-    return res.status(404).json({message:"Problem not found"})
+app.get("/api/problems/:id", async (req, res) => {
+  try {
+    //id's in mongodb are not 1,2,3 they are diff i.e 66c8f1 kind so we don't need parseInt anymore
+    const problem = await Problem.findById(req.params.id);
+
+    if (!problem) {
+      return res.status(404).json({ message: "Problem not found" });
+    }
+
+    res.status(200).json(problem);
+  } catch (error) {
+    res
+      .status(400)
+      .json({
+        message: "Invalid ID format or server error",
+        error: error.message,
+      });
   }
-
-  res.status(200).json(problem);
 });
-
 
 // POST METHOD
-app.post('/api/problems',(req,res) =>{
+app.post("/api/problems", async (req, res) => {
+  const { title, description, difficulty, tags } = req.body;
 
-  const title = req.body.title;
-
-  if(!title){
+  if (!title || !description || !difficulty) {
     return res.status(400).json({
-      message: "Title is required"
+      message: "Title,description and difficulty is required",
     });
   }
-  
-  //calculate a safe unique new id using math.max
-  const newId = problems.length > 0 ? Math.max(...problems.map(problem => problem.id)) + 1 : 1;
 
-  //creating a new problem 
-  const newProblem = {
-    id: newId, // i.e 4,5,6
-    title: title // title snd by user
+  try {
+    //creating a new problem
+    const newProblem = await Problem.create({
+      title,
+      description,
+      difficulty,
+      tags: tags || [], //fallback to empty array if tags arent sent
+    });
+    res.status(201).json(newProblem);
+  } catch (error) {
+    res.status(500).json({
+      message: "failed to create problem",
+      error: error.message,
+    });
   }
-  problems.push(newProblem);
-  
-  // snding back the new pb to user to know it worked but it shuld be in json format
-  res.status(201).json(newProblem)
 });
 
-app.get('/search', (req,res) => {
+//SEARCH METHOD
+app.get("/search", async (req, res) => {
   const requestQuery = req.query.q;
 
   // If the user didn't provide a parameter, return an error
-  if (!requesQuery) {
-    return res.status(400).json({ message: "Please provide a search parameter (?q=...)" });
+  if (!requestQuery) {
+    return res
+      .status(400)
+      .json({ message: "Please provide a search parameter (?q=...)" });
   }
 
   //cleaning up the extra spaces and forcing it to lowercase
-  const cleanQuery = requestQuery.trim().toLowerCase()
+  const cleanQuery = requestQuery.trim();
 
-  // step 1 : looking for exact match 
-  const exactMatch = problems.find(p => {
-    const matchesId = p.id.toString() === cleanQuery;
-    const matchesExactTitle = p.title.toLowerCase() === cleanQuery;
-    
-    return matchesId || matchesExactTitle
-  })
-  // if the exact match found
-  if(exactMatch){
-    return res.status(200).json([exactMatch])
-  }
-  
-  // step 2: partial match : // This looks for titles that "contain" the search string (e.g., "Two" matches "Two Sum")
-  
-  const partialMatches = problems.filter(p => {
-    
-    return p.title.toLowerCase().includes(cleanQuery);
+  try {
+    const result = await Problem.find({
+      title: {
+        $regex: cleanQuery,
+        $options: "i",
+      },
+    });
 
-  })
- 
-  // if both step fails return 404
-  if(partialMatches.length === 0){
-    return res.status(404).json({message:"Problem not found"})
+    //No mactching problems found
+    if (result.length === 0) {
+      return res.status(404).json({
+        message: "Problem not found",
+      });
+    }
+
+    //return matching pb
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to search problems",
+      error: error.message,
+    });
   }
-  
-  // this will return the actual matching pb
-  res.status(200).json(partialMatches);
-})
+});
 
 //PUT METHOD
-app.put('/api/problems/:id',(req,res) => {
-  const problemId = parseInt(req.params.id);
-  
-  //finding the exact pb based on id
-  const problem = problems.find(p => p.id === problemId);
-  
+app.put("/api/problems/:id", async (req, res) => {
+  const problemId = req.params.id;
+  const { title } = req.body;
+
   // if not found
-  if(!problem){
-    return res.status(404).json({message: "Problem not found"});
+  if (!title) {
+    return res.status(400).json({ message: "Title not found" });
   }
 
-  //if user forgot to send new title return 404 error
-  if(!req.body.title){
-    return res.status(400).json({
-      message :"Title is required for update"
-    })
+  try {
+    const updatedProblem = await Problem.findByIdAndUpdate(
+      problemId,
+      { title: title },
+      { new: true },
+    );
 
+    if (!updatedProblem) {
+      return res.status(404).json({
+        message: "Problem not found",
+      });
+    }
+
+    res.status(200).json(updatedProblem);
+  } catch (error) {
+    res.status(500).json({
+      message: "failed to update problem",
+      error: error.message,
+    });
   }
-
-  // updating title directly
-  problem.title = req.body.title;
-
-  //returniing the updated one
-  res.status(200).json(problem);
-
-
-})
+});
 
 //DELETE METHOD:
 
-app.delete('/api/problems/:id', (req,res) =>{
-  const problemId = parseInt(req.params.id);
+app.delete("/api/problems/:id", async (req, res) => {
+  const problemId = req.params.id;
 
-  //finding the exact index to delete since it a array
-  const problemIndex = problems.findIndex(problem => problem.id === problemId);
+  try {
+    const deletedProblems = await Problem.findByIdAndDelete(problemId);
 
-  //if that id not found return 404
-  if(problemIndex === -1){
-    return res.status(404).json({
-      message : "Problem not found to delete"
-    })
+    if (!deletedProblems) {
+      return res.status(404).json({
+        message: "Problem not found",
+      });
+    }
+
+    res.status(200).json({
+      message: "Problem deleted successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Problem not found ",
+      error: error.message,
+    });
   }
-  
-  // deleting a pb
-  const deleteProblem = problems.splice(problemIndex,1);
- 
-  // sending the status of deleted ones
-  res.status(200).json({
-    message: `Problem with id: ${problemId} got deleted`,
-    problem: deleteProblem[0]
-  })
-
-})
+});
 
 // Start the server
 app.listen(port, () => {
