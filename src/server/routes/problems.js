@@ -5,8 +5,14 @@ const express = require("express");
 
 const Problem = require('../models/Problem');
 
+const authMiddleware = require("../middleware/authMiddleware");
+
+const validateObjectId = require("../middleware/validateObjectId")
+
 //creating router object
 const router = express.Router();
+
+
 
 //connecting router to controller
 const {getProblems,getProblemById, createProblem, searchProblem, updateProblem, deleteProblem} = require('../controllers/problemController') 
@@ -19,16 +25,16 @@ router.get('/', getProblems);
 router.get("/search", searchProblem);
 
 // triggering particular id based pbs
-router.get("/:id", getProblemById);
+router.get("/:id", validateObjectId, getProblemById);
 
 // POST METHOD
-router.post("/", createProblem);
+router.post("/",authMiddleware ,createProblem);
 
 //PUT METHOD
-router.put("/:id", updateProblem);
+router.put("/:id", authMiddleware , validateObjectId ,updateProblem);
 
 //DELETE METHOD:
-router.delete("/:id", deleteProblem);
+router.delete("/:id",authMiddleware,validateObjectId ,deleteProblem);
 
 //making this router available to other files
 module.exports = router;

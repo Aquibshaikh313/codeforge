@@ -13,7 +13,9 @@ const problemSchema = new mongoose.Schema({
 
     difficulty: {
         type: String,
-        required: true
+        required: true,
+        enum: ['easy', 'medium', 'hard'],
+        lowercase:true
     },
 
     tags: {
@@ -21,6 +23,8 @@ const problemSchema = new mongoose.Schema({
         default: []
     }
 });
+
+
 
 const Problem = mongoose.model('Problem',problemSchema);
 

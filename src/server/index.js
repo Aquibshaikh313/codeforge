@@ -4,8 +4,11 @@ const express = require("express");
 //dotenv basically loads env into process.env so our password = "secret password"
 require("dotenv").config();
 
+
 //imports function responsible for mongodb connection
 const connectDB = require("./config/db");
+
+const authRoutes = require("./routes/auth");
 
 const problemRoutes = require("./routes/problems");
 
@@ -18,20 +21,18 @@ connectDB();
 //imp basically json middleware parsing so routes can access it thru req.body
 app.use(express.json());
 
-//this is authetication middleware, runs before routes
-app.use((req, res, next) => {
-  const token = req.headers.authorization;
-
-  if (!token) {
-    return res.status(401).json({
-      message: "Authorization token required",
-    });
-  }
-
-  next();
-});
+app.use("/api/auth", authRoutes);
 
 app.use("/api/problems", problemRoutes);
+
+const authMiddleware = require("./middleware/authMiddleware");
+
+app.get("/api/test-protected", authMiddleware, (req, res) => {
+  res.status(200).json({
+    message: "You are authenticated",
+    user: req.user,
+  });
+});
 
 // Start the server
 app.listen(port, () => {
